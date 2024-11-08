@@ -1,0 +1,45 @@
+# Apply this config conditionally to all C files
+If:
+  PathMatch: .*\.(c|h)$
+CompileFlags:
+  Add:
+    - -std=c23
+#  Compiler: /usr/bin/clang
+
+---
+# Apply this config conditionally to all C++ files
+If:
+  PathMatch: .*\.(c|h)pp
+CompileFlags:
+  Add:
+    - -std=c++23
+    - -Wall
+#    - -Wno-missing-prototypes
+    - -Wno-c++98-compat-pedantic 
+    - -Wno-zero-as-null-pointer-constant
+    - -Wno-c++98-compat
+    - -Wno-newline-eof 
+    - -Wno-unsafe-buffer-usage
+#  Remove: -mabi
+#  Compiler: /usr/bin/clang++
+
+---
+# Tweak the clangd parse settings for all files
+CompileFlags:
+  Add:
+    - -ferror-limit=0
+Hover:
+  ShowAKA: false
+InlayHints:
+  Enabled: false
+Diagnostics:
+  ClangTidy:
+    Add:
+      - modernize*
+    Remove: 
+      - modernize-use-trailing-return-type
+      - modernize-use-nullptr
+      - readability-magic-numbers 
+      - modernize-avoid-c-arrays
+      - readability-identifier-length
+      #- readability-math-missing-parentheses
