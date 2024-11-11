@@ -1,3 +1,5 @@
+#!/bin/bash
+
 # Usefull Alias
 alias tree="tree -CA"
 alias ll="ls -a -l"
@@ -17,38 +19,48 @@ alias v="gvim"
 
 # Useful Functions
 
+# list .cs files
+lcs() {
+    # ls -a | grep ".cs$"
+    for f in ./*; do
+        case $f in
+        *\.cs) echo "$f" ;;
+        # *) echo "$f error file" ;;
+        esac
+    done
+}
 # find in .cs file
-fcs()
-{
+fcs() {
     searchText="$1"
-    __findIn "*.cs" $searchText 
+    __findIn "*.cs" "$searchText"
 }
 
 # find in .cpp file
-fcpp()
-{
+fcpp() {
     searchText="$1"
-    __findIn "*.cpp" $searchText 
+    __findIn "*.cpp" "$searchText"
 }
 
 # find in .hpp file
-fhpp()
-{
+fhpp() {
     searchText="$1"
-    __findIn "*.hpp" $searchText 
+    __findIn "*.hpp" "$searchText"
 }
 
 # find in custom file
-fcus()
-{
-    __findIn "$1" "$2" 
+fcus() {
+    __findIn "$1" "$2"
 }
 
 # find in specific file
-__findIn()
-{
+__findIn() {
     filePatternText="$1"
     searchText="$2"
-    find . -name "$filePatternText" -print0 | xargs -0 sed -n -s -e "/"$searchText"/IF" -e "/"$searchText"/I=" -e "/"$searchText"/Ip" -e "/"$searchText"/a\\ " -e "/"$searchText"/a\\ "
+    startPoint="$3"
 
+    if [[ $startPoint == "" ]]; then
+        startPoint="."
+    fi
+
+    find "$startPoint" -name "$filePatternText" -print0 | xargs -0 sed -n -s -e "/""$searchText""/IF" -e "/""$searchText""/I=" -e "/""$searchText""/Ip" -e "/""$searchText""/Ia\\ " -e "/""$searchText""/Ia\\ "
 }
