@@ -32,24 +32,27 @@ lcs() {
 # find in .cs file
 fcs() {
     searchText="$1"
-    __findIn "*.cs" "$searchText"
+    startPoint="$2"
+    __findIn "*.cs" "$searchText" "$startPoint"
 }
 
 # find in .cpp file
 fcpp() {
     searchText="$1"
-    __findIn "*.cpp" "$searchText"
+    startPoint="$2"
+    __findIn "*.cpp" "$searchText" "$startPoint"
 }
 
 # find in .hpp file
 fhpp() {
     searchText="$1"
-    __findIn "*.hpp" "$searchText"
+    startPoint="$2"
+    __findIn "*.hpp" "$searchText" "$startPoint"
 }
 
 # find in custom file
 fcus() {
-    __findIn "$1" "$2"
+    __findIn "$1" "$2" "$3"
 }
 
 # find in specific file
