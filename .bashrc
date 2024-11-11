@@ -25,14 +25,14 @@ fcs()
 }
 
 # find in .cpp file
-fcs()
+fcpp()
 {
     searchText="$1"
     __findIn "*.cpp" $searchText 
 }
 
 # find in .hpp file
-fcs()
+fhpp()
 {
     searchText="$1"
     __findIn "*.hpp" $searchText 
