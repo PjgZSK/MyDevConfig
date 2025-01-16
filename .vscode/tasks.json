@@ -1,0 +1,58 @@
+{
+    // See https://go.microsoft.com/fwlink/?LinkId=733558
+    // for the documentation about the tasks.json format
+    "version": "2.0.0",
+    "windows": {
+        "options": {
+            "shell": {
+                "executable": "cmd.exe",
+                "args": [
+                    "/c",
+                    "echo Log For Multi Quotes",
+                    "&&",
+                    "\"C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\VC\\Auxiliary\\Build\\vcvars64.bat\"",
+                    "&&"
+                ]
+            }
+        },
+    },
+    "tasks": [
+        {
+            "label": "build-release",
+            "type": "shell",
+            // "command": "ninja -C build",
+            "command": "cmake --build build --config Release",
+            "group": "build",
+            "windows": {
+                "problemMatcher": "$msCompile"
+            },
+        },
+        {
+            "label": "build and run release",
+            "type": "shell",
+            "group": "build",
+            "windows": {
+                "problemMatcher": "$msCompile",
+                "command": "cmake --build build --config Release && .\\Build\\src\\Release\\entry.exe",
+            },
+            "osx": {
+                "command": "cmake --build build --config Release && ./Build/src/Release/entry",
+            }
+        },
+        {
+            "label": "build-debug",
+            "type": "shell",
+            "command": "cmake --build build --config Debug",
+            "group": "build",
+            "windows": {
+                "problemMatcher": "$msCompile"
+            },
+        },
+        {
+            "label": "CMake-Ninja gen",
+            "type": "shell",
+            "command": "CMake -B build -G \"Ninja Multi-Config\" -DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
+            "group": "build"
+        }
+    ]
+}

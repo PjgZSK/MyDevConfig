@@ -1,0 +1,30 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "C/C++: msvc debuger",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/src/Debug/entry.exe",
+            "args": [],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+            // "externalConsole": false,
+            "preLaunchTask": "build-debug"
+        },
+        {
+            "name": "C/C++: osx debuger",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/src/Debug/entry",
+            "args": [],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+            // "externalConsole": false,
+            "preLaunchTask": "build-debug",
+            "MIMode": "lldb",
+        }
+    ]
+}
