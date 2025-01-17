@@ -104,7 +104,8 @@ BraceWrapping:
   BeforeElse:      true 
   IndentBraces:    false
   SplitEmptyFunction: false
-BreakBeforeBraces: Custom
+  BeforeLambdaBody: true
+BreakBeforeBraces: Custom 
 
 # If true, ternary operators will be placed after line breaks.
 BreakBeforeTernaryOperators: true
