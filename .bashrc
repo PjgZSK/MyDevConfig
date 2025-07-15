@@ -33,6 +33,14 @@ lcs() {
         esac
     done
 }
+
+# find in .lua file
+flua() {
+    searchText="$1"
+    startPoint="$2"
+    __findIn "*.lua" "$searchText" "$startPoint"
+}
+
 # find in .cs file
 fcs() {
     searchText="$1"
