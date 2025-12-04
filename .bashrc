@@ -34,6 +34,13 @@ lcs() {
     done
 }
 
+# find in .py file
+fpy() {
+    searchText="$1"
+    startPoint="$2"
+    __findIn "*.py" "$searchText" "$startPoint"
+}
+
 # find in .lua file
 flua() {
     searchText="$1"
@@ -94,7 +101,8 @@ __findIn() {
         startPoint="."
     fi
 
-    find "$startPoint" -name "$filePatternText" -print0 | xargs -0 sed -n -s -e "/""$searchText""/IF" -e "/""$searchText""/I=" -e "/""$searchText""/Ip" -e "/""$searchText""/Ia\\ " -e "/""$searchText""/Ia\\ "
+    find "$startPoint" -type f -name "$filePatternText" -print0 | xargs -0 sed -n -s -e "/""$searchText""/IF" -e "/""$searchText""/I=" -e "/""$searchText""/Ip" -e "/""$searchText""/Ia\\ " -e "/""$searchText""/Ia\\ "
+    # find "$startPoint" -type f -name "$filePatternText" -print0 | xargs -0 -I {} sh -c "echo {}; sed -n -s -e "/""$searchText""/I=" -e "/""$searchText""/Ip" {}; printf '=%.0s' {1..80}; echo; echo; echo "
 }
 
 
@@ -117,4 +125,19 @@ __subsIn() {
     fi
 
     find "$startPoint" -name "$filePatternText" -print0 | xargs -0 sed -i -e "s/""$searchText""/""$substituteText""/g" 
+}
+
+# 列出当前文件夹下svn最新添加和修改的jpg和png图片(不包括文件夹)
+svn_latest_commit() {
+    svn diff -r PREV:COMMITTED --summarize | iconv -f GBK -t UTF-8 | awk '{print $2}' | grep -E "\.(jpg|png)$"
+}
+
+# 复制
+cp_svn_latest_commit(){
+    target=$1
+
+    files=$(svn diff -r PREV:COMMITTED --summarize | iconv -f GBK -t UTF-8 | awk '{print $2}' | grep -E "\.(jpg|png)$")
+    files="${files//\\//}"
+    # echo "$files"
+    echo "$files" | xargs -I{} cp {} "$target"
 }
