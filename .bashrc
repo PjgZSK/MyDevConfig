@@ -1,5 +1,60 @@
 #!/bin/bash
 
+# ========== 环境判断 ==========
+detect_os() {
+    case "$OSTYPE" in
+        darwin*)
+            export OS_TYPE="macos"
+            export IS_MACOS=1
+            export IS_WINDOWS=0
+            ;;
+        msys*|cygwin*|mingw*)
+            export OS_TYPE="windows"
+            export IS_MACOS=0
+            export IS_WINDOWS=1
+            ;;
+        linux*)
+            export OS_TYPE="linux"
+            export IS_MACOS=0
+            export IS_WINDOWS=0
+            ;;
+        *)
+            export OS_TYPE="unknown"
+            export IS_MACOS=0
+            export IS_WINDOWS=0
+            ;;
+    esac
+}
+
+detect_os
+
+# ========== 条件配置 ==========
+
+# macOS 特有配置
+if [[ "$OS_TYPE" == "macos" ]]; then
+    :
+    # macOS 的 ls 支持颜色
+    # alias ls='ls -G'
+    # macOS 的 brew 路径
+    # eval "$(/opt/homebrew/bin/brew shellenv)" 2>/dev/null || \
+    # eval "$(/usr/local/bin/brew shellenv)" 2>/dev/null
+    # macOS 的 open 命令
+    # alias openfile='open'
+fi
+
+# Windows (Git Bash) 特有配置
+if [[ "$OS_TYPE" == "windows" ]]; then
+    # Windows 的 ls 使用 --color
+    # alias ls='ls --color=auto'
+    # Windows 路径转换
+    # alias explorer='explorer.exe'
+    # alias clip='clip.exe'
+    # 打开新 Git Bash 窗口
+    alias newbash='start "" "C:\Program Files\Git\git-bash.exe"'
+    # Windows 下使用 notepad++ 或 code
+    # alias notepad='notepad++.exe' 2>/dev/null || 'notepad.exe'
+fi
+
 # Usefull Alias
 alias tree="tree -CA"
 alias ll="ls -a -l"
