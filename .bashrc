@@ -51,6 +51,9 @@ if [[ "$OS_TYPE" == "windows" ]]; then
     # alias clip='clip.exe'
     # 打开新 Git Bash 窗口
     alias newbash='start "" "C:\Program Files\Git\git-bash.exe"'
+    alias gotolua="cd /d/project/csgo/client/assets/lua"
+    alias gotoAsset="cd /d/project/csgo/client/assets"
+    alias gotoServer="cd /d/project/csgo/server"
     # Windows 下使用 notepad++ 或 code
     # alias notepad='notepad++.exe' 2>/dev/null || 'notepad.exe'
 fi
