@@ -1,11 +1,24 @@
 -- ~/.config/nvim/init.lua
 
+-- 静音 DSR 警告：当前终端（如 Windows conhost）不响应 DSR 探测，
+-- Neovim 0.12 会在 startup 抱怨。换 WezTerm/Alacritty 是真正的修复，
+-- 这里只是把噪声过滤掉，不掩盖其他真错误。
+do
+    local original_notify = vim.notify
+    vim.notify = function(msg, level, opts)
+        if type(msg) == "string" and msg:find("Did not detect DSR response", 1, true) then
+            return
+        end
+        return original_notify(msg, level, opts)
+    end
+end
+
 local M = {}
 
 function M.get_os()
     if vim.fn.has("win32") == 1 or vim.fn.has("win64") == 1 then
         return "windows"
-    elseif vim.fn.has("mac") == 1 or vim.loop.os_uname().sysname == "Darwin" then
+    elseif vim.fn.has("mac") == 1 or vim.uv.os_uname().sysname == "Darwin" then
         return "macos"
     else
         return "linux"
@@ -95,7 +108,7 @@ vim.keymap.set('t', '<Esc>', [[<C-\><C-n>]], { noremap = true })
 -- 在 insert 模式下，将中文句号映射为英文点号
 vim.keymap.set("i", "。", ".", { noremap = true })
 vim.keymap.set("n", "<Leader>u", "<C-r>")
-vim.keymap.set("n", "<Esc>", "<Esc>:w<CR>", { noremap = true, silent = true })
+vim.keymap.set("n", "<leader>w", ":w<CR>", { noremap = true, silent = true, desc = "Save file" })
 vim.keymap.set("i", "<D-r>", "<C-r>", { noremap = true, silent = true })
 vim.keymap.set("v", "<D-c>", '"+y', { noremap = true, silent = true })
 vim.keymap.set("n", "<D-v>", '"+p', { noremap = true, silent = true })
@@ -109,8 +122,8 @@ vim.keymap.set("n", "<C-h>", "<C-w>h", { noremap = true, silent = true })
 vim.keymap.set("n", "<C-j>", "<C-w>j", { noremap = true, silent = true })
 vim.keymap.set("n", "<C-k>", "<C-w>k", { noremap = true, silent = true })
 vim.keymap.set("n", "<C-l>", "<C-w>l", { noremap = true, silent = true })
-vim.keymap.set("n", "<leader>q", ":q<CR>", { noremap = true, silent = true })
-vim.keymap.set("n", "<leader>Q", ":q!<CR>", { noremap = true, silent = true })
+vim.keymap.set("n", "<leader>qq", ":q<CR>", { noremap = true, silent = true, desc = "Quit" })
+vim.keymap.set("n", "<leader>QQ", ":q!<CR>", { noremap = true, silent = true, desc = "Quit without saving" })
 vim.keymap.set("n", "<leader>h", ":nohlsearch<CR>", { noremap = true, silent = true })
 vim.keymap.set(
     "n",
@@ -147,11 +160,11 @@ vim.keymap.set("n", "<D-t>", ":tabnew<CR>", { silent = true })
 vim.keymap.set("n", "<D-w>", ":bdelete<CR>", { silent = true })
 vim.keymap.set("n", "<A-t>", ":tabnew<CR>", { silent = true })
 vim.keymap.set("n", "<A-w>", ":bdelete<CR>", { silent = true })
-vim.keymap.set("n", "<Leader-bd>", ":bdelete<CR>", { silent = true })
+vim.keymap.set("n", "<leader>bd", ":bdelete<CR>", { silent = true, desc = "Delete buffer" })
 
 -- 4. Telescope 快速选择
 vim.keymap.set("n", "<C-b>", ":Telescope buffers<CR>", { silent = true })
-vim.keymap.set("n", "<Leader-bs>", ":Telescope buffers<CR>", { silent = true })
+vim.keymap.set("n", "<leader>bs", ":Telescope buffers<CR>", { silent = true, desc = "Buffer search" })
 
 -- 5. 保留 Vim 原生风格作为备选
 vim.keymap.set("n", "gt", ":BufferLineCycleNext<CR>", { silent = true })
@@ -197,11 +210,30 @@ else
     end, {})
 end
 
+-- ==========================================
+-- LSP 共享键位（提前到 lazy.setup 之前，roslyn.nvim 闭包要用）
+-- ==========================================
+
+local function setup_lsp_keymaps(bufnr)
+    local opts = { buffer = bufnr, noremap = true, silent = true }
+
+    vim.keymap.set("n", "gd", vim.lsp.buf.definition, opts)
+    vim.keymap.set("n", "gr", vim.lsp.buf.references, opts)
+    vim.keymap.set("n", "gD", vim.lsp.buf.declaration, opts)
+    vim.keymap.set("n", "gi", vim.lsp.buf.implementation, opts)
+    vim.keymap.set("n", "K", vim.lsp.buf.hover, opts)
+    vim.keymap.set("n", "<leader>rn", vim.lsp.buf.rename, opts)
+    vim.keymap.set("n", "<leader>ca", vim.lsp.buf.code_action, opts)
+    vim.keymap.set("n", "[d", vim.diagnostic.goto_prev, opts)
+    vim.keymap.set("n", "]d", vim.diagnostic.goto_next, opts)
+    vim.keymap.set("n", "<leader>d", vim.diagnostic.open_float, opts)
+end
+
 -- 插件管理器: lazy.nvim
 -- ==========================================
 
 local lazypath = vim.fn.stdpath("data") .. "/lazy/lazy.nvim"
-if not vim.loop.fs_stat(lazypath) then
+if not vim.uv.fs_stat(lazypath) then
     vim.fn.system({
         "git",
         "clone",
@@ -245,18 +277,11 @@ require("lazy").setup({
                     markdown = { "prettierd", "prettier", stop_after_first = true },
                     sh = { "shfmt" },
                     bash = { "shfmt" },
+                    cs = { "csharpier" },
                 },
                 format_on_save = format_on_save,
                 notify_on_error = true,
             })
-
-            vim.keymap.set({ "n", "v" }, "<leader>f", function()
-                conform.format({
-                    lsp_fallback = true,
-                    async = false,
-                    timeout_ms = 500,
-                })
-            end, { desc = "Format file or range" })
         end,
     },
 
@@ -324,21 +349,19 @@ require("lazy").setup({
             require("telescope").load_extension("neoclip")
         end,
     },
-    -- 主题
+    -- 主题（备选，按需切换）
     {
         "folke/tokyonight.nvim",
-        lazy = false,
-        priority = 1000,
+        lazy = true,
         config = function()
             require("tokyonight").setup({
                 style = "night",
                 transparent = false,
                 terminal_colors = true,
             })
-            vim.cmd([[colorscheme tokyonight]])
         end,
     },
-    -- 选项 2：Catppuccin（非常流行）
+    -- 启动主题：Catppuccin
     {
         "catppuccin/nvim",
         name = "catppuccin",
@@ -371,7 +394,7 @@ require("lazy").setup({
         config = function()
             require("lualine").setup({
                 options = {
-                    theme = "tokyonight",
+                    theme = "auto", -- 跟随当前 colorscheme 自动派生
                     component_separators = { left = "", right = "" },
                     section_separators = { left = "", right = "" },
                 },
@@ -460,6 +483,7 @@ require("lazy").setup({
                     "bash",
                     "vim",
                     "vimdoc",
+                    "c_sharp",
                 },
                 sync_install = false,
                 auto_install = true,
@@ -499,7 +523,8 @@ require("lazy").setup({
     -- 1. 首先加载 Mason 并配置 registry
     {
         "williamboman/mason.nvim",
-        priority = 1000, -- 确保最先加载
+        lazy = false,    -- 启动时加载，让 mason/bin 进 PATH（LSP 启动要找二进制）
+        priority = 1000, -- 在其他插件之前
         config = function()
             require("mason").setup({
                 registries = {
@@ -513,17 +538,123 @@ require("lazy").setup({
     -- 2. Mason 工具安装器（可选但推荐）
     {
         "WhoIsSethDaniel/mason-tool-installer.nvim",
+        lazy = false, -- 启动时跑 ensure_installed 检查
         dependencies = { "williamboman/mason.nvim" },
         config = function()
             require("mason-tool-installer").setup({
                 ensure_installed = {
-                    "roslyn",     -- C# LSP
-                    "netcoredbg", -- 调试器
-                    "csharpier",  -- 格式化
+                    -- ===== LSP servers =====
+                    "lua-language-server",            -- lua_ls
+                    "pyright",                        -- python
+                    "typescript-language-server",     -- ts_ls
+                    "bash-language-server",           -- bashls
+                    "html-lsp",                       -- vscode-html-language-server
+                    "css-lsp",                        -- vscode-css-language-server
+                    "json-lsp",                       -- vscode-json-language-server
+                    "roslyn",                         -- C#（Crashdummyy registry）
+
+                    -- ===== Formatters =====
+                    "stylua",                         -- Lua
+                    "isort",                          -- Python imports
+                    "black",                          -- Python
+                    "prettierd",                      -- JS/TS/CSS/HTML/JSON/YAML/MD
+                    "prettier",                       -- prettierd 兜底
+                    "shfmt",                          -- sh/bash
+                    "csharpier",                      -- C#
+
+                    -- ===== Debuggers =====
+                    "netcoredbg",                     -- C#
                 },
                 auto_update = true,
                 run_on_start = true,
             })
+        end,
+    },
+
+    -- ==========================================
+    -- C# / .NET 支持
+    -- ==========================================
+
+    -- Roslyn LSP 壳（处理非标准启动协议 + sln/csproj 自动发现）
+    {
+        "seblyng/roslyn.nvim",
+        ft = "cs",
+        dependencies = { "williamboman/mason.nvim" },
+        config = function()
+            require("roslyn").setup({
+                config = {
+                    on_attach = function(client, bufnr)
+                        setup_lsp_keymaps(bufnr)
+                    end,
+                    settings = {
+                        ["csharp|inlay_hints"] = {
+                            csharp_enable_inlay_hints_for_implicit_object_creation = true,
+                            csharp_enable_inlay_hints_for_implicit_variable_types = true,
+                            csharp_enable_inlay_hints_for_lambda_parameter_types = true,
+                            csharp_enable_inlay_hints_for_types = true,
+                        },
+                        ["csharp|code_lens"] = {
+                            dotnet_enable_references_code_lens = true,
+                        },
+                    },
+                },
+            })
+        end,
+    },
+
+    -- 调试：DAP + UI + virtual text + C# 适配
+    {
+        "mfussenegger/nvim-dap",
+        dependencies = {
+            { "rcarriga/nvim-dap-ui",            dependencies = { "nvim-neotest/nvim-nio" } },
+            { "theHamsta/nvim-dap-virtual-text" },
+        },
+        config = function()
+            local dap = require("dap")
+            local dapui = require("dapui")
+
+            dapui.setup()
+            require("nvim-dap-virtual-text").setup()
+
+            -- UI 自动开关
+            dap.listeners.after.event_initialized["dapui"] = function() dapui.open() end
+            dap.listeners.before.event_terminated["dapui"] = function() dapui.close() end
+            dap.listeners.before.event_exited["dapui"] = function() dapui.close() end
+
+            -- C# 适配器（netcoredbg 由 Mason 安装，shim 在 PATH 上；exepath 跨平台解析）
+            dap.adapters.coreclr = {
+                type = "executable",
+                command = vim.fn.exepath("netcoredbg"),
+                args = { "--interpreter=vscode" },
+            }
+
+            dap.configurations.cs = {
+                {
+                    type = "coreclr",
+                    name = "launch - netcoredbg",
+                    request = "launch",
+                    program = function()
+                        return vim.fn.input(
+                            "Path to dll: ",
+                            vim.fn.getcwd() .. "/bin/Debug/",
+                            "file"
+                        )
+                    end,
+                },
+            }
+
+            -- 调试键位
+            vim.keymap.set("n", "<leader>db", dap.toggle_breakpoint, { desc = "DAP toggle breakpoint" })
+            vim.keymap.set("n", "<leader>dB", function()
+                dap.set_breakpoint(vim.fn.input("Condition: "))
+            end, { desc = "DAP conditional breakpoint" })
+            vim.keymap.set("n", "<leader>dc", dap.continue, { desc = "DAP continue / start" })
+            vim.keymap.set("n", "<leader>di", dap.step_into, { desc = "DAP step into" })
+            vim.keymap.set("n", "<leader>do", dap.step_over, { desc = "DAP step over" })
+            vim.keymap.set("n", "<leader>dO", dap.step_out, { desc = "DAP step out" })
+            vim.keymap.set("n", "<leader>dr", dap.repl.toggle, { desc = "DAP REPL" })
+            vim.keymap.set("n", "<leader>dt", dap.terminate, { desc = "DAP terminate" })
+            vim.keymap.set("n", "<leader>du", dapui.toggle, { desc = "DAP UI toggle" })
         end,
     },
 
@@ -576,31 +707,14 @@ require("lazy").setup({
         end,
     },
 }, {
-    install = { colorscheme = { "tokyonight" } },
+    install = { colorscheme = { "catppuccin" } },
     checker = { enabled = true, notify = false },
 })
 
 -- ==========================================
 -- Neovim 0.11+ 原生 LSP 配置
 -- ==========================================
-
-local function setup_lsp_keymaps(bufnr)
-    local opts = { buffer = bufnr, noremap = true, silent = true }
-
-    vim.keymap.set("n", "gd", vim.lsp.buf.definition, opts)
-    vim.keymap.set("n", "gr", vim.lsp.buf.references, opts)
-    vim.keymap.set("n", "gD", vim.lsp.buf.declaration, opts)
-    vim.keymap.set("n", "gi", vim.lsp.buf.implementation, opts)
-    vim.keymap.set("n", "K", vim.lsp.buf.hover, opts)
-    vim.keymap.set("n", "<leader>rn", vim.lsp.buf.rename, opts)
-    vim.keymap.set("n", "<leader>ca", vim.lsp.buf.code_action, opts)
-    vim.keymap.set("n", "<leader>f", function()
-        vim.lsp.buf.format({ async = true })
-    end, opts)
-    vim.keymap.set("n", "[d", vim.diagnostic.goto_prev, opts)
-    vim.keymap.set("n", "]d", vim.diagnostic.goto_next, opts)
-    vim.keymap.set("n", "<leader>d", vim.diagnostic.open_float, opts)
-end
+-- 注：setup_lsp_keymaps 在 lazy.setup 之前定义（roslyn.nvim 的 config 闭包需要它）
 
 vim.lsp.config("*", {
     capabilities = {
