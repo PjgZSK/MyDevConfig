@@ -1,8 +1,15 @@
 -- ~/.config/nvim/init.lua
 
--- 静音 DSR 警告：当前终端（如 Windows conhost）不响应 DSR 探测，
--- Neovim 0.12 会在 startup 抱怨。换 WezTerm/Alacritty 是真正的修复，
--- 这里只是把噪声过滤掉，不掩盖其他真错误。
+-- 防御性 DSR 警告过滤。
+-- 注意：这个 wrap 抓不到 startup 时 _core/defaults.lua 发的那条
+-- "Did not detect DSR response..."。--startuptime 测过：
+--   037ms  require('vim._core.defaults')   ← defaults 在这里同步 vim.wait(100)
+--   037ms  --cmd commands                  ← --cmd 也在 defaults 之后
+--   ~367ms sourcing init.lua               ← 我们这条 wrap 挂上时为时已晚
+-- 真正消除 startup 警告的办法是换响应 DSR 的终端（WezTerm/Alacritty/
+-- Windows Terminal），或者直接到 nvim/runtime/lua/vim/_core/defaults.lua
+-- 把那行 vim.notify 注释掉（每次升级 nvim 会被覆盖）。
+-- 留着这层 wrap 是兜底：万一有别的代码路径之后又抛同样消息。
 do
     local original_notify = vim.notify
     vim.notify = function(msg, level, opts)
@@ -25,7 +32,8 @@ function M.get_os()
     end
 end
 
-local os = M.get_os()
+-- 用 current_os 避免遮蔽 Lua 标准库 os
+local current_os = M.get_os()
 
 -- ==========================================
 -- 基础设置
@@ -40,6 +48,7 @@ vim.opt.fileencoding = "utf-8"
 vim.opt.swapfile = false
 vim.opt.backup = false
 vim.opt.writebackup = false
+vim.opt.undofile = true -- 持久化撤销历史，重启 nvim 还能 u 回去
 vim.opt.updatetime = 300
 vim.opt.timeoutlen = 500
 vim.opt.termguicolors = true
@@ -69,9 +78,54 @@ vim.opt.foldlevel = 99      -- 默认展开所有折叠
 vim.opt.foldlevelstart = 99 -- 启动时展开
 vim.opt.foldnestmax = 4     -- 最大嵌套层数
 
--- Treesitter 折叠（需要安装 nvim-treesitter）
-vim.opt.foldmethod = "expr"
-vim.opt.foldexpr = "nvim_treesitter#foldexpr()"
+-- Treesitter 折叠：用 Neovim 原生 foldexpr（读取 parser 的 folds.scm），
+-- 比 nvim-treesitter master 的 Vimscript 版 nvim_treesitter#foldexpr() 更稳。
+-- 只在装了 parser 的 filetype 上开启 expr 折叠，避免无 parser buffer
+-- 反复触发 foldexpr 兜底，污染 :messages。
+vim.api.nvim_create_autocmd("FileType", {
+    callback = function(args)
+        if vim.treesitter.language.get_lang(args.match) then
+            vim.opt_local.foldmethod = "expr"
+            vim.opt_local.foldexpr = "v:lua.vim.treesitter.foldexpr()"
+        end
+    end,
+})
+
+-- 兜底 Neovim 0.12.x + nvim-treesitter master 的注入解析崩溃：
+--   "vim/treesitter.lua:196: attempt to call method 'range' (a nil value)"
+-- iter_matches() 偶尔给 capture 喂非 TSNode 值，后面 get_range 里
+-- node:range 找不到方法 → 整个 highlighter / foldexpr / telescope previewer
+-- 被这一条烂 capture 拖垮（异步路径冒在 vim.schedule callback，同步路径
+-- 冒在 decoration provider 'start'）。
+--
+-- 关键：必须包 vim.treesitter.get_range 自己，而不是只包 LanguageTree._get_injection。
+-- 因为 highlighter.lua 在主循环里直接调 get_range，根本不走 _get_injection；
+-- _fold.lua 也直接调。只兜 _get_injection 漏掉这两条路。
+do
+    local ok, ts = pcall(require, "vim.treesitter")
+    if ok and ts and ts.get_range then
+        local orig_get_range = ts.get_range
+        ts.get_range = function(node, source, metadata)
+            local ok2, ret = pcall(orig_get_range, node, source, metadata)
+            -- 出错就返回一个零范围：调用方继续跑（高亮/折叠跳过这一个 capture），
+            -- 而不是整个 provider 抛异常出来弹窗。
+            if not ok2 then return { 0, 0, 0, 0, 0, 0 } end
+            return ret
+        end
+    end
+
+    -- 防御性的第二层：连带把 LanguageTree._get_injection 也包上。
+    -- get_range 已经兜了大头，这里只是兜万一别的注入流程抛非 get_range 的错。
+    local ok_lt, LanguageTree = pcall(require, "vim.treesitter.languagetree")
+    if ok_lt and LanguageTree and LanguageTree._get_injection then
+        local orig = LanguageTree._get_injection
+        LanguageTree._get_injection = function(self, match, metadata)
+            local ok2, lang, combined, ranges = pcall(orig, self, match, metadata)
+            if not ok2 then return nil, false, {} end
+            return lang, combined, ranges
+        end
+    end
+end
 
 -- ==========================================
 -- 护眼优化设置
@@ -80,15 +134,16 @@ vim.opt.foldexpr = "nvim_treesitter#foldexpr()"
 -- 降低对比度（配合柔和主题）
 vim.opt.conceallevel = 0
 
--- 光标行柔和高亮
-vim.opt.cursorline = true
-vim.api.nvim_set_hl(0, "CursorLine", { bg = "#2a2a3a", blend = 20 })
-
--- 行号柔和颜色
-vim.api.nvim_set_hl(0, "LineNr", { fg = "#6e6a86" }) -- 灰色行号
-
--- 选中区域柔和
-vim.api.nvim_set_hl(0, "Visual", { bg = "#3e3e5e", blend = 30 })
+-- 自定义 highlight 必须在 ColorScheme 之后跑，否则 `colorscheme catppuccin`
+-- 触发的 `hi clear` 会把它们全擦掉。blend 字段对普通 highlight 不起作用
+-- （只对 winblend/popup 生效），去掉。
+vim.api.nvim_create_autocmd("ColorScheme", {
+    callback = function()
+        vim.api.nvim_set_hl(0, "CursorLine", { bg = "#2a2a3a" }) -- 光标行柔和
+        vim.api.nvim_set_hl(0, "LineNr", { fg = "#6e6a86" })     -- 灰色行号
+        vim.api.nvim_set_hl(0, "Visual", { bg = "#3e3e5e" })     -- 选中区域柔和
+    end,
+})
 
 -- 减少闪烁
 vim.opt.belloff = "all"
@@ -142,9 +197,9 @@ vim.keymap.set(
 -- Tab/Buffer 切换配置（推荐组合）
 -- =========================================
 
--- 1. 使用 Tab 键快速循环（最常用）
-vim.keymap.set("n", "<Tab>", ":BufferLineCycleNext<CR>", { silent = true })
-vim.keymap.set("n", "<S-Tab>", ":BufferLineCyclePrev<CR>", { silent = true })
+-- 1. 切换 buffer：不映射 <Tab>，因为终端里 <Tab> ≡ <C-i>，
+--    一旦映射就把跳转前进 <C-i> 彻底打死。用 <A-Left/Right>、<D-Left/Right>
+--    或下面的 gt/gT 即可。
 vim.keymap.set("n", "<A-Right>", ":BufferLineCycleNext<CR>", { silent = true })
 vim.keymap.set("n", "<A-Left>", ":BufferLineCyclePrev<CR>", { silent = true })
 vim.keymap.set("n", "<D-Right>", ":BufferLineCycleNext<CR>", { silent = true })
@@ -211,7 +266,8 @@ else
 end
 
 -- ==========================================
--- LSP 共享键位（提前到 lazy.setup 之前，roslyn.nvim 闭包要用）
+-- LSP 共享键位 + capabilities helper
+-- 必须提前到 lazy.setup 之前定义，roslyn.nvim 的 config 闭包要捕获。
 -- ==========================================
 
 local function setup_lsp_keymaps(bufnr)
@@ -224,9 +280,23 @@ local function setup_lsp_keymaps(bufnr)
     vim.keymap.set("n", "K", vim.lsp.buf.hover, opts)
     vim.keymap.set("n", "<leader>rn", vim.lsp.buf.rename, opts)
     vim.keymap.set("n", "<leader>ca", vim.lsp.buf.code_action, opts)
-    vim.keymap.set("n", "[d", vim.diagnostic.goto_prev, opts)
-    vim.keymap.set("n", "]d", vim.diagnostic.goto_next, opts)
+    -- 0.11+ goto_prev/goto_next 已 deprecate，用 jump
+    vim.keymap.set("n", "[d", function() vim.diagnostic.jump({ count = -1, float = true }) end, opts)
+    vim.keymap.set("n", "]d", function() vim.diagnostic.jump({ count = 1, float = true }) end, opts)
     vim.keymap.set("n", "<leader>d", vim.diagnostic.open_float, opts)
+end
+
+-- LSP 共享 capabilities：在默认 protocol capabilities 上叠加 blink.cmp 提供
+-- 的补全能力，让 server 知道客户端支持 snippet resolve、commit characters、
+-- additional text edits 等。pcall 兜底 blink 没装的情况（理论上不会发生，
+-- 但保留 fallback 让 LSP 仍可工作）。
+local function get_lsp_capabilities()
+    local caps = vim.lsp.protocol.make_client_capabilities()
+    local ok, blink = pcall(require, "blink.cmp")
+    if ok then
+        caps = blink.get_lsp_capabilities(caps)
+    end
+    return caps
 end
 
 -- 插件管理器: lazy.nvim
@@ -255,7 +325,7 @@ require("lazy").setup({
         config = function()
             local conform = require("conform")
             local format_on_save = false
-            if os == "macos" then
+            if current_os == "macos" then
                 format_on_save = {
                     timeout_ms = 500,
                     lsp_fallback = false,
@@ -435,12 +505,41 @@ require("lazy").setup({
     -- 模糊查找
     {
         "nvim-telescope/telescope.nvim",
-        tag = "0.1.5",
+        -- 跟 master：lazy-lock.json 已经替我们钉住具体 commit；老 tag 0.1.5 跟
+        -- master 上的 plenary.nvim 容易踩 API 漂移。
         dependencies = {
             "nvim-lua/plenary.nvim",
-            { "nvim-telescope/telescope-fzf-native.nvim", build = "make" },
+            {
+                "nvim-telescope/telescope-fzf-native.nvim",
+                -- Windows 上没现成 make，走 cmake；macOS/Linux 继续用 make。
+                build = vim.fn.has("win32") == 1
+                    and "cmake -S. -Bbuild -DCMAKE_BUILD_TYPE=Release"
+                    .. " && cmake --build build --config Release"
+                    .. " && cmake --install build --prefix build"
+                    or "make",
+            },
         },
         config = function()
+            -- 显式钉死 find_files 的 find_command，绕过 telescope 自动探测在
+            -- Windows 上回退到 `where /r . *` 的坑（大目录或遇权限拒绝就抛异常，
+            -- 看上去就是"打开 find_files 后查特定文件 nvim 报错"）。
+            -- 顺序：fd > fdfind > rg > Windows cmd dir > POSIX find。
+            local function detect_find_command()
+                if vim.fn.executable("fd") == 1 then
+                    return { "fd", "--type", "f", "--hidden", "--follow", "--exclude", ".git" }
+                elseif vim.fn.executable("fdfind") == 1 then
+                    return { "fdfind", "--type", "f", "--hidden", "--follow", "--exclude", ".git" }
+                elseif vim.fn.executable("rg") == 1 then
+                    return { "rg", "--files", "--hidden", "--glob", "!.git" }
+                elseif vim.fn.has("win32") == 1 then
+                    -- /a-d 排除目录 /b 裸格式 /s 递归；stderr 重定向到 nul
+                    -- 避免权限拒绝消息污染 stdout。
+                    return { "cmd", "/c", "dir /a-d /b /s 2>nul" }
+                else
+                    return { "find", ".", "-type", "f" }
+                end
+            end
+
             require("telescope").setup({
                 extensions = {
                     fzf = {
@@ -448,6 +547,12 @@ require("lazy").setup({
                         override_generic_sorter = true,
                         override_file_sorter = true,
                         case_mode = "smart_case",
+                    },
+                },
+                pickers = {
+                    find_files = {
+                        find_command = detect_find_command(),
+                        hidden = true,
                     },
                 },
             })
@@ -557,8 +662,7 @@ require("lazy").setup({
                     "stylua",                         -- Lua
                     "isort",                          -- Python imports
                     "black",                          -- Python
-                    "prettierd",                      -- JS/TS/CSS/HTML/JSON/YAML/MD
-                    "prettier",                       -- prettierd 兜底
+                    "prettierd",                      -- JS/TS/CSS/HTML/JSON/YAML/MD（已内置 prettier，不再单独装）
                     "shfmt",                          -- sh/bash
                     "csharpier",                      -- C#
 
@@ -583,6 +687,7 @@ require("lazy").setup({
         config = function()
             require("roslyn").setup({
                 config = {
+                    capabilities = get_lsp_capabilities(),
                     on_attach = function(client, bufnr)
                         setup_lsp_keymaps(bufnr)
                     end,
@@ -717,20 +822,7 @@ require("lazy").setup({
 -- 注：setup_lsp_keymaps 在 lazy.setup 之前定义（roslyn.nvim 的 config 闭包需要它）
 
 vim.lsp.config("*", {
-    capabilities = {
-        textDocument = {
-            completion = {
-                dynamicRegistration = false,
-                completionItem = {
-                    snippetSupport = true,
-                    commitCharactersSupport = true,
-                    documentationFormat = { "markdown", "plaintext" },
-                    deprecatedSupport = true,
-                    preselectSupport = true,
-                },
-            },
-        },
-    },
+    capabilities = get_lsp_capabilities(),
     on_attach = function(client, bufnr)
         setup_lsp_keymaps(bufnr)
         if client.server_capabilities.documentFormattingProvider then
@@ -751,7 +843,10 @@ vim.lsp.config.lua_ls = {
             runtime = { version = "LuaJIT" },
             diagnostics = { globals = { "vim" } },
             workspace = {
-                library = vim.api.nvim_get_runtime_file("", true),
+                -- 只把 VIMRUNTIME 喂给 lua_ls，避免加载整个 runtimepath
+                -- （含所有插件源码）导致启动慢、内存几百 MB。
+                -- 想要 plugin API 类型补全可换 lazydev.nvim 按需注入。
+                library = { vim.env.VIMRUNTIME },
                 checkThirdParty = false,
             },
             telemetry = { enable = false },
@@ -807,23 +902,27 @@ vim.lsp.config.bashls = {
 vim.lsp.enable({ "lua_ls", "pyright", "ts_ls", "html", "cssls", "jsonls", "bashls" })
 
 -- 诊断配置
+-- - source = true 取代 deprecated 的 "always"（0.10+）
+-- - signs 直接在 config 里写 text 表，按 severity 索引；
+--   不再用 sign_define + DiagnosticSign<Type> 那套老 API（0.10+ 已 deprecate）
 vim.diagnostic.config({
     virtual_text = true,
-    signs = true,
     underline = true,
     update_in_insert = false,
     severity_sort = true,
     float = {
         border = "rounded",
-        source = "always",
+        source = true,
+    },
+    signs = {
+        text = {
+            [vim.diagnostic.severity.ERROR] = " ",
+            [vim.diagnostic.severity.WARN]  = " ",
+            [vim.diagnostic.severity.HINT]  = " ",
+            [vim.diagnostic.severity.INFO]  = " ",
+        },
     },
 })
-
-local signs = { Error = " ", Warn = " ", Hint = " ", Info = " " }
-for type, icon in pairs(signs) do
-    local hl = "DiagnosticSign" .. type
-    vim.fn.sign_define(hl, { text = icon, texthl = hl, numhl = hl })
-end
 
 -- 自动命令
 vim.api.nvim_create_autocmd("TermOpen", {
@@ -831,4 +930,7 @@ vim.api.nvim_create_autocmd("TermOpen", {
     command = "startinsert",
 })
 
-print("Neovim 配置加载完成! 🚀")
+-- 不在末尾 print "配置加载完成"。原因：startup 时如果 defaults.lua 已经
+-- 因为终端不响应 DSR emit 了一条警告，再叠这条 print 就总共 ≥ 2 行
+-- echo，触发 hit-Enter prompt（"tip 界面"），每次打开 nvim 都要按一下键。
+-- 现在只剩 defaults.lua 那一条（_truncate=true 一行就装下），不再触发。
