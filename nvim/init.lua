@@ -589,6 +589,8 @@ require("lazy").setup({
                     "vim",
                     "vimdoc",
                     "c_sharp",
+                    "c",
+                    "cpp",
                 },
                 sync_install = false,
                 auto_install = true,
@@ -657,6 +659,7 @@ require("lazy").setup({
                     "css-lsp",                        -- vscode-css-language-server
                     "json-lsp",                       -- vscode-json-language-server
                     "roslyn",                         -- C#（Crashdummyy registry）
+                    "clangd",                         -- C/C++
 
                     -- ===== Formatters =====
                     "stylua",                         -- Lua
@@ -899,7 +902,13 @@ vim.lsp.config.bashls = {
     root_markers = { ".git" },
 }
 
-vim.lsp.enable({ "lua_ls", "pyright", "ts_ls", "html", "cssls", "jsonls", "bashls" })
+vim.lsp.config.clangd = {
+    cmd = { "clangd", "--background-index", "--clang-tidy", "--header-insertion=iwyu" },
+    filetypes = { "c", "cpp", "objc", "objcpp", "cuda" },
+    root_markers = { ".clangd", "compile_commands.json", "compile_flags.txt", ".git" },
+}
+
+vim.lsp.enable({ "lua_ls", "pyright", "ts_ls", "html", "cssls", "jsonls", "bashls", "clangd" })
 
 -- 诊断配置
 -- - source = true 取代 deprecated 的 "always"（0.10+）
